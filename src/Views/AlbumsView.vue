@@ -88,10 +88,9 @@ export default defineComponent({
   margin-top: 8px;
 }
 
-/* убираем вертикальный скролл у контейнера полноэкранного диалога */
+
 :deep(.viewer-dialog .v-overlay__content) {
   overflow: hidden !important;
-  /* на некоторых платформах помогает стабилизировать полосу */
   scrollbar-gutter: stable both-edges;
 }
 </style>
