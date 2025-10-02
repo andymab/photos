@@ -1,0 +1,63 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sunlite Album (Portable)</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<style>
+    body {
+        margin: 0;
+        font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+        color: #eef3ff
+    }
+
+    .bg {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        background: radial-gradient(1200px 800px at 10% 0%, rgba(255, 255, 255, .06), transparent 60%), linear-gradient(135deg, #6a4bd8, #258ad1 50%, #11c3bd)
+    }
+
+    .wrap {
+        padding: 14px
+    }
+
+    .grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr))
+    }
+
+    .card {
+        background: rgba(8, 12, 32, .5);
+        backdrop-filter: blur(6px);
+        border: 1px solid rgba(255, 255, 255, .08);
+        border-radius: 14px;
+        padding: 10px
+    }
+
+    img {
+        width: 100%;
+        height: auto;
+        border-radius: 10px;
+        display: block
+    }
+</style>
+<div class="bg"></div>
+<div class="wrap">
+    <div id="grid" class="grid"></div>
+</div>
+<script>
+    (async () => {
+        try {
+            const data = await fetch('album.json').then(r => r.json());
+            const grid = document.getElementById('grid');
+            for (const p of data.photos) {
+                const s320 = p.sizes['320']; const s1600 = p.sizes['1600'] || s320;
+                const card = document.createElement('div'); card.className = 'card';
+                const img = new Image(); img.loading = 'lazy'; img.decoding = 'async';
+                img.src = s320; img.srcset = `${s320} 320w, ${s1600} 1600w`; img.sizes = '(max-width:640px) 320px, 100vw';
+                card.appendChild(img); grid.appendChild(card);
+            }
+        } catch (e) { document.getElementById('grid').textContent = 'album.json not found'; }
+    })();
+</script>

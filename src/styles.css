@@ -1,0 +1,108 @@
+/* Gradient background + minimal card styles to match the icon */
+:root {
+    color-scheme: dark;
+    --bg1: #2a1f72;
+    --bg2: #0b7ec2;
+    --bg3: #11c3bd;
+}
+
+html,
+body,
+#app {
+    height: 100%;
+}
+
+body {
+    margin: 0;
+    font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    background: radial-gradient(1200px 800px at 10% 0%, rgba(255, 255, 255, 0.06), transparent 60%),
+        linear-gradient(135deg, #6a4bd8, #258ad1 50%, #11c3bd);
+    color: #eef3ff;
+}
+
+
+.card {
+    background: rgba(8, 12, 32, 0.5);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 16px;
+}
+
+.btn {
+    appearance: none;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    border-radius: 12px;
+    padding: 10px 14px;
+    cursor: pointer;
+}
+
+.btn:hover {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.input {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #fff;
+    border-radius: 10px;
+    padding: 10px 12px;
+    width: 100%;
+}
+
+.grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+
+/* 1) Базовая разметка страницы — не форсируем скролл */
+html,
+body {
+    height: 100%;
+    margin: 0;
+    overflow-y: auto !important;
+    /* не scroll, а auto */
+    overflow-x: hidden;
+    /* на всякий от обрезанных рядов */
+}
+
+/* 2) Контейнер приложения заполняет экран, без случайных прокруток */
+#app,
+.app,
+.v-application {
+    min-height: 100dvh;
+    /* устойчиво на мобилках */
+    overflow: clip;
+    /* не создавать скролл из-за теней/выпуклостей */
+}
+
+/* 3) Сброс верхних margin у заголовков — часто именно они «толкают» страницу */
+h1,
+h2,
+h3 {
+    margin-top: 0;
+}
+
+/* 4) Vuetify: убираем горизонтальный оверфлоу от отрицательных маргинов row */
+.v-application {
+    overflow-x: hidden;
+}
+
+:root .v-container.pa-0 .v-row {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+}
+
+/* 5) Если где-то включили scrollbar-gutter — отключить глобально */
+html {
+    scrollbar-gutter: auto;
+}
+
+/* 6) Диалог-плеер: скролл только внутри, а не на странице */
+.viewer-dialog .v-overlay__content {
+    overflow: hidden !important;
+}

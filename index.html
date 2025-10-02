@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b1020" />
+    <title>Фотоальбомы</title>
+
+    <!-- Локальные стили (лежат рядом в dist, исходно в public/) -->
+    <link href="./materialdesignicons.min.css" rel="stylesheet" />
+    <style>
+        @font-face {
+            font-family: "Material Design Icons";
+            src: url("./materialdesignicons-webfont.woff2") format("woff2");
+            font-weight: normal;
+            font-style: normal;
+            font-display: block;
+        }
+    </style>
+    <link href="./vuetify.min.css" rel="stylesheet" />
+    <!-- Favicon для вкладки (браузеры сами уменьшают при необходимости) -->
+    <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="./icons/icon-512.png">
+
+    <!-- iOS (иконка на домашнем экране). 180x180 предпочтительно, но 192x192 тоже ок -->
+    <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-192.png">
+
+
+    <!-- PWA манифест/иконки -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+
+    <style>
+        html,
+        body,
+        #app {
+            height: 100%;
+        }
+
+        body {
+            background: #0b1020;
+            margin: 0;
+        }
+
+        .mono {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+
+        #error-box {
+            position: fixed;
+            right: 12px;
+            bottom: 12px;
+            max-width: 520px;
+            background: #250b0b;
+            border: 1px solid #ff6b6b;
+            color: #ffdede;
+            padding: 10px 12px;
+            border-radius: 12px;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, .4);
+            font-size: 12px;
+            line-height: 1.5;
+            display: none;
+            z-index: 9999;
+        }
+
+        #error-box b {
+            color: #fff;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app"></div>
+    <div id="error-box"></div>
+
+    <!-- Локальные UMD-скрипты (лежат рядом) — СНАЧАЛА Vue, потом Vuetify -->
+    <script defer src="./vue.global.js" id="vue-local"></script>
+    <script defer src="./vuetify.min.js" id="vuetify-local"></script>
+    <script defer src="./vue-router.global.js"></script>
+
+    <!-- Наш модуль приложения (собирается Vite в один маленький файл) -->
+    <script type="module" src="/src/main.ts"></script>
+</body>
+
+</html>
