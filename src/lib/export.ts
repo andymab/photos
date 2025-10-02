@@ -3,13 +3,42 @@ import { dbp, getBlob } from './db'
 
 type RawBlob = Blob | { type?: string, buffer?: ArrayBuffer | Uint8Array, data?: ArrayBuffer | Uint8Array }
 
-function sanitize(name: string = '') {
-  return name.trim().replace(/[^a-z0-9_\-]+/gi, '_') || 'photo'
+function safeFilename(name: string, fallback = 'Фото'): string {
+  let s = (name || fallback).normalize('NFC').trim()
+  // запрещённые: / \ : * ? " < > | и управляющие
+  s = s.replace(/[\/\\:\*\?"<>\|\x00-\x1F]/g, ' ')
+    .replace(/\s+/g, ' ')       // схлопнуть пробелы
+    .replace(/^\.+$/, fallback) // одни точки → fallback
+    .replace(/^\s+|\s+$/g, '')
+  return s || fallback
 }
-function ext(name: string) {
-  const i = name.lastIndexOf('.')
-  return i > -1 ? name.slice(i) : '.jpg'
+
+function extFromType(type?: string): string {
+  if (!type) return '.jpg'
+  const t = type.toLowerCase()
+  if (t.includes('jpeg')) return '.jpg'
+  if (t.includes('png')) return '.png'
+  if (t.includes('webp')) return '.webp'
+  if (t.includes('gif')) return '.gif'
+  return '.jpg'
 }
+
+function makeUniqueNamer() {
+  const used = new Set<string>()
+  return (path: string) => {
+    if (!used.has(path)) { used.add(path); return path }
+    const dot = path.lastIndexOf('.')
+    const base = dot >= 0 ? path.slice(0, dot) : path
+    const ext = dot >= 0 ? path.slice(dot) : ''
+    let i = 2
+    let candidate = `${base}-${i}${ext}`
+    while (used.has(candidate)) { i++; candidate = `${base}-${i}${ext}` }
+    used.add(candidate)
+    return candidate
+  }
+}
+
+
 function toBlob(raw: RawBlob, fallbackType = 'image/jpeg'): Blob {
   if (raw instanceof Blob) return raw
   const type = (raw && 'type' in (raw as any) && (raw as any).type) || fallbackType
@@ -77,35 +106,52 @@ export async function exportAlbumToDirectory(albumId: string) {
   const files: { path: string, blob: Blob }[] = []
   const itemsForIndex: { name: string, desc?: string, s320?: string, s1600?: string }[] = []
 
+  const unique = makeUniqueNamer()
+
   for (const p of photos) {
-    const base = sanitize(p.title || `photo_${p.id}`)
-    // найдём 320/1600
+    const title = typeof p.title === 'string' && p.title.trim() ? p.title.trim() : `Фото_${p.id}`
+    const base = safeFilename(title)
+
+    // найдём варианты
     const v320 = (p.variants || []).find((v: any) => v.size === 320)
     const v1600 = (p.variants || []).find((v: any) => v.size === 1600) || v320
 
-    // загрузим сырьё из БД и нормализуем в Blob
-    let b320: Blob | undefined
-    let b1600: Blob | undefined
-    if (v320) { const raw = await getBlob(v320.blobId); b320 = toBlob(raw) }
-    if (v1600) { const raw = await getBlob(v1600.blobId); b1600 = toBlob(raw) }
+    // загрузим и определим расширения по MIME
+    let b320: Blob | undefined, b1600: Blob | undefined
+    let e320 = '.jpg', e1600 = '.jpg'
 
-    // имена файлов
-    const name320 = `${base}_320${ext('.jpg')}`
-    const name1600 = `${base}_1600${ext('.jpg')}`
+    if (v320) {
+      const raw = await getBlob(v320.blobId)
+      b320 = toBlob(raw)
+      e320 = extFromType(b320.type)
+    }
+    if (v1600) {
+      const raw = await getBlob(v1600.blobId)
+      b1600 = toBlob(raw)
+      e1600 = extFromType(b1600.type)
+    }
 
-    if (b320) files.push({ path: `images/${name320}`, blob: b320 })
-    if (b1600) files.push({ path: `images/${name1600}`, blob: b1600 })
+    // базовые пути (unicode-имя), затем уникализируем
+    let path320 = `images/${base}_320${e320}`
+    let path1600 = `images/${base}_1600${e1600}`
+
+    if (b320) path320 = unique(path320)
+    if (b1600) path1600 = unique(path1600)
+
+    if (b320) files.push({ path: path320, blob: b320 })
+    if (b1600) files.push({ path: path1600, blob: b1600 })
 
     itemsForIndex.push({
-      name: base,
+      name: title,                        // показываем исходный заголовок
       desc: (p.description || '') as string,
-      s320: b320 ? `images/${name320}` : undefined,
-      s1600: b1600 ? `images/${name1600}` : undefined
+      s320: b320 ? path320 : (b1600 ? path1600 : undefined),
+      s1600: b1600 ? path1600 : (b320 ? path320 : undefined),
     })
+
   }
 
   const albumTitle = album.title || `album_${albumId}`
-  const folderName = sanitize(albumTitle)
+  const folderName = safeFilename(albumTitle, `album_${albumId}`)
 
   // есть ли поддержка папочного пикера?
   const hasPicker = typeof (window as any).showDirectoryPicker === 'function'
