@@ -1,117 +1,157 @@
-import { dbp } from "./db";
+import JSZip from 'jszip'
+import { dbp, getBlob } from './db'
 
+type RawBlob = Blob | { type?: string, buffer?: ArrayBuffer | Uint8Array, data?: ArrayBuffer | Uint8Array }
+
+function sanitize(name: string = '') {
+  return name.trim().replace(/[^a-z0-9_\-]+/gi, '_') || 'photo'
+}
 function ext(name: string) {
-  const i = name.lastIndexOf(".");
-  return i > -1 ? name.slice(i) : ".jpg";
+  const i = name.lastIndexOf('.')
+  return i > -1 ? name.slice(i) : '.jpg'
+}
+function toBlob(raw: RawBlob, fallbackType = 'image/jpeg'): Blob {
+  if (raw instanceof Blob) return raw
+  const type = (raw && 'type' in (raw as any) && (raw as any).type) || fallbackType
+  const buf = (raw && ('buffer' in (raw as any) ? (raw as any).buffer :
+    'data' in (raw as any) ? (raw as any).data : null)) || new Uint8Array()
+  return new Blob([buf as ArrayBuffer | Uint8Array], { type })
+}
+async function writeFile(dir: any, name: string, blob: Blob) {
+  const fh = await dir.getFileHandle(name, { create: true })
+  const ws = await fh.createWritable()
+  await ws.write(blob)
+  await ws.close()
 }
 async function writeText(dir: any, name: string, text: string) {
-  const fh = await dir.getFileHandle(name, { create: true });
-  const ws = await fh.createWritable();
-  await ws.write(text);
-  await ws.close();
+  await writeFile(dir, name, new Blob([text], { type: 'text/html; charset=utf-8' }))
+}
+
+function makeIndexHtml(title: string, items: { name: string, desc?: string, s320?: string, s1600?: string }[]) {
+  // простой статический индекс: если есть 1600 — подключаем srcset
+  const cards = items.map(it => {
+    const img = it.s1600
+      ? `<img src="${it.s320 || it.s1600}" srcset="${[it.s320 && `${it.s320} 320w`, it.s1600 && `${it.s1600} 1600w`].filter(Boolean).join(', ')}" sizes="(max-width:640px) 320px, 100vw" alt="${it.name}" />`
+      : `<img src="${it.s320}" alt="${it.name}" />`
+    const caption = it.desc && it.desc.trim()
+      ? `<figcaption><strong>${it.name}</strong><br/>${it.desc}</figcaption>`
+      : `<figcaption>${it.name}</figcaption>`
+    return `<figure class="card">${caption}${img}</figure>`
+  }).join('\n')
+
+  return `<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>${title}</title>
+  <style>
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#111;color:#eee}
+    .wrap{max-width:1100px;margin:0 auto;padding:16px}
+    h1{font-size:20px;margin:0 0 12px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+    .card{background:#1a1a1a;border:1px solid #333;border-radius:12px;padding:8px}
+    img{width:100%;height:auto;display:block;border-radius:8px}
+    figcaption{font-size:12px;opacity:.7;margin:4px 0 6px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>${title}</h1>
+    <div class="grid">
+      ${cards}
+    </div>
+  </div>
+</body>
+</html>`
 }
 
 export async function exportAlbumToDirectory(albumId: string) {
-  // @ts-ignore
-  const dirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
-  const mediaDir = await dirHandle.getDirectoryHandle("media", {
-    create: true,
-  });
-  const db = await dbp;
-  const album = await db.get("albums", albumId);
-  const photos = await Promise.all(
-    album.photoIds.map((id: string) => db.get("photos", id))
-  );
+  const db = await dbp
+  const album = await db.get('albums', albumId)
+  if (!album) throw new Error('Альбом не найден')
 
-  const manifest: any = {
-    title: album.title,
-    createdAt: album.createdAt,
-    photos: [],
-  };
+  const photos = (await Promise.all((album.photoIds || []).map((id: string) => db.get('photos', id)))).filter(Boolean)
+
+  // соберём файлы для экспорта
+  const files: { path: string, blob: Blob }[] = []
+  const itemsForIndex: { name: string, desc?: string, s320?: string, s1600?: string }[] = []
 
   for (const p of photos) {
-    const entry: any = {
-      id: p.id,
-      title: p.title,
-      description: p.description,
-      sizes: {},
-    };
-    for (const v of p.variants) {
-      const blob = await db.get("blobs", v.blobId);
-      const name = `${p.id}_${v.size}.webp`;
-      const fh = await mediaDir.getFileHandle(name, { create: true });
-      const ws = await fh.createWritable();
-      await ws.write(blob);
-      await ws.close();
-      entry.sizes[v.size] = `media/${name}`;
-    }
-    // original copy
-    const orig = await db.get("blobs", p.originalBlobId);
-    const ofh = await mediaDir.getFileHandle(
-      `${p.id}_original${ext(p.filename)}`,
-      { create: true }
-    );
-    const ows = await ofh.createWritable();
-    await ows.write(orig);
-    await ows.close();
+    const base = sanitize(p.title || `photo_${p.id}`)
+    // найдём 320/1600
+    const v320 = (p.variants || []).find((v: any) => v.size === 320)
+    const v1600 = (p.variants || []).find((v: any) => v.size === 1600) || v320
 
-    manifest.photos.push(entry);
+    // загрузим сырьё из БД и нормализуем в Blob
+    let b320: Blob | undefined
+    let b1600: Blob | undefined
+    if (v320) { const raw = await getBlob(v320.blobId); b320 = toBlob(raw) }
+    if (v1600) { const raw = await getBlob(v1600.blobId); b1600 = toBlob(raw) }
+
+    // имена файлов
+    const name320 = `${base}_320${ext('.jpg')}`
+    const name1600 = `${base}_1600${ext('.jpg')}`
+
+    if (b320) files.push({ path: `images/${name320}`, blob: b320 })
+    if (b1600) files.push({ path: `images/${name1600}`, blob: b1600 })
+
+    itemsForIndex.push({
+      name: base,
+      desc: (p.description || '') as string,
+      s320: b320 ? `images/${name320}` : undefined,
+      s1600: b1600 ? `images/${name1600}` : undefined
+    })
   }
 
-  await writeText(dirHandle, "album.json", JSON.stringify(manifest, null, 2));
-  await writeText(dirHandle, "index.html", PORTABLE_HTML);
-}
+  const albumTitle = album.title || `album_${albumId}`
+  const folderName = sanitize(albumTitle)
 
-// src/lib/export.ts
-export const PORTABLE_HTML = `<!doctype html>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sunlite Album</title>
-<style>
-body{margin:0;font:16px/1.5 system-ui;color:#eef3ff;}
-.bg{position:fixed;inset:0;z-index:-1;background:
-  radial-gradient(1200px 800px at 10% 0%, rgba(255,255,255,.06), transparent 60%),
-  linear-gradient(135deg,#6a4bd8,#258ad1 50%,#11c3bd);}
-.wrap{padding:14px}
-.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
-.card{background:rgba(8,12,32,.5);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:10px}
-img{width:100%;height:auto;border-radius:10px;display:block}
-.err{margin-top:12px;padding:12px;border-radius:10px;background:#3a1f1f;border:1px solid #a55;color:#ffd9d9}
-</style>
-<div class="bg"></div>
-<div class="wrap">
-  <div class="grid" id="grid"></div>
-  <div class="err" id="err" style="display:none"></div>
-</div>
-<script>
-(async () => {
-  const grid = document.getElementById('grid');
-  const err  = document.getElementById('err');
-  try {
-    const res = await fetch('album.json');
-    if (!res.ok) throw new Error('album.json fetch failed: ' + res.status);
-    const data = await res.json();
-    if (!data || !Array.isArray(data.photos)) throw new Error('album.json has no photos array');
+  // есть ли поддержка папочного пикера?
+  const hasPicker = typeof (window as any).showDirectoryPicker === 'function'
 
-    for (const p of data.photos) {
-      const s320  = p.sizes && (p.sizes['320']  || p.sizes[320]);
-      const s1600 = p.sizes && (p.sizes['1600'] || p.sizes[1600]) || s320;
-      const card  = document.createElement('div'); card.className = 'card';
-      const img   = new Image(); img.loading = 'lazy'; img.decoding = 'async';
-      if (s320) {
-        img.src = s320;
-        if (s1600) {
-          img.srcset = s320 + ' 320w, ' + s1600 + ' 1600w';
-          img.sizes  = '(max-width:640px) 320px, 100vw';
-        }
+  if (hasPicker) {
+    // @ts-ignore
+    const root = await (window as any).showDirectoryPicker({ mode: 'readwrite' })
+    const dir = (root.getDirectoryHandle && await root.getDirectoryHandle(folderName, { create: true })) || root
+
+    // подпапка images
+    const imagesDir = (dir.getDirectoryHandle && await dir.getDirectoryHandle('images', { create: true })) || dir
+
+    // запись файлов
+    for (const f of files) {
+      if (f.path.startsWith('images/')) {
+        await writeFile(imagesDir, f.path.slice('images/'.length), f.blob)
+      } else {
+        await writeFile(dir, f.path, f.blob)
       }
-      card.appendChild(img);
-      grid.appendChild(card);
     }
-  } catch (e) {
-    err.style.display = 'block';
-    err.textContent = 'Ошибка загрузки альбома: ' + (e && e.message ? e.message : e);
-    console.error(e);
+    // index.html
+    const html = makeIndexHtml(albumTitle, itemsForIndex)
+    await writeText(dir, 'index.html', html)
+    return
   }
-})();
-</script>`;
+
+  // Фоллбэк: собираем ZIP
+  const zip = new JSZip()
+  const imagesZip = zip.folder('images')!
+  for (const f of files) {
+    if (f.path.startsWith('images/')) {
+      imagesZip.file(f.path.slice('images/'.length), f.blob)
+    } else {
+      zip.file(f.path, f.blob)
+    }
+  }
+  const html = makeIndexHtml(albumTitle, itemsForIndex)
+  zip.file('index.html', html)
+
+  const zipBlob = await zip.generateAsync({ type: 'blob' })
+  const url = URL.createObjectURL(zipBlob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${folderName}.zip`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}

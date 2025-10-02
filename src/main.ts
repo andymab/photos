@@ -8,10 +8,16 @@ import { registerSW } from './plugins/pwa';
 const app = createApp(App);
 
 // Если используешь Vuetify 3 через UMD:
-const vuetify = (window as any).Vuetify?.createVuetify
-  ? (window as any).Vuetify.createVuetify({})
-  : undefined;
-if (vuetify) app.use(vuetify);
+const Vuetify = (window as any).Vuetify
+const vuetify = Vuetify?.createVuetify
+  ? Vuetify.createVuetify({
+      // ВАЖНО: говорим Vuetify, что иконки — webfont MDI
+      icons: { defaultSet: 'mdi' },
+      // theme: { defaultTheme: 'dark' }, // если тебе надо
+    })
+  : undefined
+
+  if (vuetify) app.use(vuetify)
 
 app.use(router).mount('#app');
 

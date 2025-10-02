@@ -1,6 +1,7 @@
 <template>
 
     <section class="card album">
+        <v-icon icon="mdi-chevron-left" />
         <div class="album__header">
             <h2 class="album__title">Альбом</h2>
             <div class="album__actions">
@@ -41,26 +42,34 @@
 
 
         <!-- ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК -->
-        <v-dialog v-model="viewerOpen" fullscreen transition="fade-transition" :scrim="true">
-            <div class="viewer" @dblclick="toggleFit" @click.self="closeViewer">
+        <v-dialog v-model="viewerOpen" fullscreen :scrim="true" transition="fade-transition" :retain-focus="false">
+            <div class="viewer" ref="viewer" @dblclick="toggleFit" @click.self="closeViewer">
                 <div class="viewer__topbar">
                     <div class="viewer__title">
                         {{ currentPhoto?.title || (photos.length ? 'Фото' : 'Нет фотографий') }}
                         <span v-if="photos.length" class="viewer__index">{{ currentIndex + 1 }} / {{ photos.length
-                            }}</span>
+                        }}</span>
                     </div>
                     <div class="viewer__actions">
                         <button class="btn" @click.stop="toggleFit" :disabled="!currentPhoto">
                             {{ fitMode === 'cover' ? 'Contain' : 'Cover' }}
                         </button>
-                        <button class="btn" @click.stop="enterFullscreen">⛶</button>
+                        <button class="btn" @click.stop.prevent="enterFullscreen">⛶</button>
+                        <button class="btn" @click="openEdit">Редактировать</button>
                         <button class="btn" @click.stop="closeViewer">✕</button>
                     </div>
                 </div>
 
                 <!-- Стрелки только если есть что листать -->
-                <button v-if="photos.length > 1" class="viewer__nav viewer__nav--left" @click.stop="prev">‹</button>
-                <button v-if="photos.length > 1" class="viewer__nav viewer__nav--right" @click.stop="next">›</button>
+                <v-btn v-if="photos.length > 1" class="viewer__nav viewer__nav--left" variant="flat" size="large" icon
+                    @click.stop="prev" aria-label="Назад">
+                    <v-icon icon="mdi-chevron-left" color="white"/>
+                </v-btn>
+
+                <v-btn v-if="photos.length > 1" class="viewer__nav viewer__nav--right" variant="flat" size="large" icon
+                    @click.stop="next" aria-label="Вперёд">
+                    <v-icon icon="mdi-chevron-right" color="white"/>
+                </v-btn>
 
                 <div class="viewer__stage" :style="{
                     backgroundImage: currentSrc ? `url('${currentSrc}')` : 'none',
@@ -78,6 +87,12 @@
                 </div>
             </div>
         </v-dialog>
+
+        <!-- Диалог редактирования названия и описания -->
+        <EditPhotoDialog v-model="editOpen" :title="editTitle" :description="editDesc" :busy="savingEdit"
+            @save="onEditSave" />
+
+
     </section>
 
 </template>
@@ -87,9 +102,11 @@
 import { defineComponent } from 'vue';
 import { dbp, getBlob } from '@/lib/db';
 import { exportAlbumToDirectory } from '@/lib/export';
+import EditPhotoDialog from '@/components/EditPhotoDialog.vue'
 
 export default defineComponent({
     name: 'AlbumView',
+    components: { EditPhotoDialog },
     data() {
         return {
             photos: [],
@@ -99,6 +116,11 @@ export default defineComponent({
             viewerOpen: false,
             currentIndex: 0,
             fitMode: 'contain', // 'cover' | 'contain'
+
+            editOpen: false,
+            editTitle: '',
+            editDesc: '',
+            savingEdit: false,
         };
     },
     computed: {
@@ -117,6 +139,42 @@ export default defineComponent({
         window.addEventListener('keydown', this.onKey);
     },
     methods: {
+
+        openEdit() {
+            const cp = this.currentPhoto
+            if (!cp) return
+            this.editTitle = cp.title || ''
+            this.editDesc = cp.description || ''
+            this.editOpen = true
+        },
+
+        async onEditSave({ title, description }) {
+            const cp = this.currentPhoto
+            if (!cp) return
+            try {
+                this.savingEdit = true
+                const db = await dbp
+                const full = await db.get('photos', cp.id)
+                if (!full) throw new Error('Фото не найдено в БД')
+
+                const updated = { ...full, title, description }
+                try { await db.put('photos', updated, full.id) } catch { await db.put('photos', updated) }
+
+                // локально обновим текущий элемент, чтобы UI сразу обновился
+                const i = this.currentIndex | 0
+                if (this.photos[i]) {
+                    this.photos[i] = { ...this.photos[i], title, description }
+                }
+                this.editOpen = false
+            } catch (e) {
+                alert('Не удалось сохранить: ' + (e && e.message ? e.message : e))
+            } finally {
+                this.savingEdit = false
+            }
+        },
+
+        closeEdit() { this.editOpen = false },
+
         async load() {
             this.loading = true;
             this.error = null;
@@ -140,9 +198,24 @@ export default defineComponent({
                         if (!p || !p.variants || !p.variants.length) return null;
                         const v320 = p.variants.find((v) => v.size === 320) || p.variants[0];
                         const v1600 = p.variants.find((v) => v.size === 1600) || v320;
-                        const src320 = URL.createObjectURL(await getBlob(v320.blobId));
-                        const src1600 = URL.createObjectURL(await getBlob(v1600.blobId));
-                        return { id: p.id, title: p.title, src320, src1600 };
+
+
+                        const raw320 = await getBlob(v320.blobId);
+                        const blob320 = raw320 instanceof Blob
+                            ? raw320
+                            : new Blob([raw320?.buffer ?? raw320?.data ?? new Uint8Array()], { type: raw320?.type || 'image/jpeg' });
+
+                        const raw1600 = await getBlob(v1600.blobId);
+                        const blob1600 = raw1600 instanceof Blob
+                            ? raw1600
+                            : new Blob([raw1600?.buffer ?? raw1600?.data ?? new Uint8Array()], { type: raw1600?.type || 'image/jpeg' });
+
+                        const src320 = URL.createObjectURL(blob320);
+                        const src1600 = URL.createObjectURL(blob1600);
+
+
+
+                        return { id: p.id, title: p.title, description: p.description || '', src320, src1600 }
                     })
                 );
 
@@ -188,15 +261,43 @@ export default defineComponent({
         toggleFit() {
             this.fitMode = this.fitMode === 'cover' ? 'contain' : 'cover';
         },
-        async enterFullscreen() {
-            const el = this.$el?.querySelector('.viewer');
-            if (!el) return;
-            try {
-                if (document.fullscreenElement) await document.exitFullscreen();
-                else await el.requestFullscreen();
-            } catch (_) { }
+        isFullscreen() {
+            return document.fullscreenElement
+                || document.webkitFullscreenElement
+                || document.mozFullScreenElement
+                || document.msFullscreenElement
+                || null;
         },
+        requestFS(el) {
+            // возвращаем промис, где это возможно
+            if (el.requestFullscreen) return el.requestFullscreen();
+            if (el.webkitRequestFullscreen) return el.webkitRequestFullscreen(); // Safari
+            if (el.mozRequestFullScreen) return el.mozRequestFullScreen();
+            if (el.msRequestFullscreen) return el.msRequestFullscreen();
+        },
+        exitFS() {
+            if (document.exitFullscreen) return document.exitFullscreen();
+            if (document.webkitExitFullscreen) return document.webkitExitFullscreen(); // Safari
+            if (document.mozCancelFullScreen) return document.mozCancelFullScreen();
+            if (document.msExitFullscreen) return document.msExitFullscreen();
+        },
+        async enterFullscreen() {
+            // только при открытом просмотрщике
+            if (!this.viewerOpen) return;
+            const el = this.$refs.viewer;
+            if (!el) return;
 
+            try {
+                if (this.isFullscreen()) {
+                    await this.exitFS();
+                } else {
+                    await this.requestFS(el);
+                }
+            } catch (e) {
+                // В Safari бывает только синхронный путь без промиса — ошибки можно игнорить
+                console.warn('Fullscreen error:', e);
+            }
+        },
     },
     beforeUnmount() {
         // чистим ObjectURL, чтобы не текла память
@@ -209,6 +310,13 @@ export default defineComponent({
 });
 </script>
 
+<style>
+:fullscreen .viewer,
+:-webkit-full-screen .viewer {
+    width: 100%;
+    height: 100%;
+}
+</style>
 <style scoped>
 /* ====== Контейнер экрана альбома ====== */
 .album {
@@ -303,6 +411,7 @@ export default defineComponent({
 .photo-caption {
     padding-top: 8px;
     opacity: 0.9;
+    color: white;
 }
 
 /* ====== Небольшие правки Vuetify-отступов ====== */
@@ -387,25 +496,23 @@ export default defineComponent({
     height: 100%;
 }
 
+
 .viewer__nav {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
     z-index: 4;
+}
+
+.viewer__nav.v-btn {
     width: 56px;
     height: 56px;
     border-radius: 50%;
     border: 1px solid rgba(255, 255, 255, .25);
     background: rgba(0, 0, 0, .35);
-    color: #fff;
-    font-size: 28px;
-    line-height: 56px;
-    text-align: center;
-    cursor: pointer;
-    user-select: none;
 }
 
-.viewer__nav:hover {
+.viewer__nav.v-btn:hover {
     background: rgba(0, 0, 0, .5);
 }
 
@@ -417,10 +524,6 @@ export default defineComponent({
     right: 12px;
 }
 
-/* кнопка .btn уже есть у тебя — просто чуть уплотним в оверлее */
-.viewer .btn {
-    padding: 8px 12px;
-}
 
 .viewer__empty {
     display: grid;
