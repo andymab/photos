@@ -1,8 +1,8 @@
 <template>
   <v-container fluid class="albums">
     <!-- СЕТКА АЛЬБОМОВ -->
-    <v-row v-if="albums.length" dense>
-      <v-col v-for="a in albums" :key="a.id" cols="12" sm="12" md="6" lg="2">
+    <v-row v-if="albums.length" dense class="albums-grid">
+      <v-col v-for="a in albums" :key="a.id" cols="12" sm="6" md="3" class="album-col">
         <v-card class="album-card" rounded="xl" elevation="2">
           <!-- кнопка-иконка редактирования -->
           <v-btn class="card-edit" icon variant="elevated" size="small" color="deep-purple-darken-1"
@@ -20,13 +20,9 @@
           <v-card-text class="album-meta">
             <div class="title" :title="a.title">{{ a.title }}</div>
             <div v-if="a.description" class="desc" :title="a.description">{{ a.description }}</div>
-            <div class="meta-row">
-              <router-link class="btn link-btn" :to="{ name: 'album', params: { id: a.id } }">Открыть</router-link>
-              <button class="btn ghost" @click="openEditAlbum(a)">Править</button>
-            </div>
+
           </v-card-text>
         </v-card>
-
       </v-col>
     </v-row>
 
@@ -53,12 +49,11 @@ export default defineComponent({
   },
   data() {
     return {
-      // можно оставить для дефолтного имени при создании
       title: 'Мой альбом',
       albums: [],
       editor: {
         open: false,
-        mode: 'create',     // 'create' | 'edit'
+        mode: 'create',
         albumId: null,
         busy: false,
         form: { title: '', description: '' },
@@ -71,8 +66,13 @@ export default defineComponent({
     this.setAlbumsAddHandler && this.setAlbumsAddHandler(() => this.openCreateDialog());
   },
   beforeUnmount() {
-    // снимаем обработчик при уходе со страницы
     this.clearAlbumsAddHandler && this.clearAlbumsAddHandler();
+    // Очищаем ObjectURL для предотвращения утечек памяти
+    this.albums.forEach(album => {
+      if (album.coverSrc320) {
+        URL.revokeObjectURL(album.coverSrc320);
+      }
+    });
   },
   methods: {
     async load() {
@@ -102,6 +102,7 @@ export default defineComponent({
       this.editor.initialPreview = '';
       this.editor.open = true;
     },
+
     openEditAlbum(a) {
       this.editor.mode = 'edit';
       this.editor.albumId = a.id;
@@ -131,7 +132,6 @@ export default defineComponent({
             coverPhotoId
           };
           await db.put('albums', album);
-
         } else {
           const a = await db.get('albums', this.editor.albumId);
           if (!a) throw new Error('Альбом не найден');
@@ -160,7 +160,6 @@ export default defineComponent({
       }
     },
 
-    // === генерация variants и запись фото (как было) ===
     async createCoverPhoto(file, db) {
       const { blob320, blob1600 } = await this.makeVariants(file);
       const blobId320 = crypto.randomUUID();
@@ -171,7 +170,8 @@ export default defineComponent({
       const photoId = crypto.randomUUID();
       const photo = {
         id: photoId,
-        title: '', description: '',
+        title: '',
+        description: '',
         createdAt: new Date().toISOString(),
         variants: [
           { size: 320, blobId: blobId320 },
@@ -181,12 +181,14 @@ export default defineComponent({
       await db.put('photos', photo);
       return photoId;
     },
+
     async makeVariants(file) {
       const img = await this.readImage(file);
       const blob320 = await this.resizeToBlob(img, 320);
       const blob1600 = await this.resizeToBlob(img, 1600);
       return { blob320, blob1600 };
     },
+
     readImage(file) {
       return new Promise((resolve, reject) => {
         const img = new Image();
@@ -195,13 +197,15 @@ export default defineComponent({
         img.src = URL.createObjectURL(file);
       });
     },
+
     resizeToBlob(img, maxSize) {
       const { width: w, height: h } = img;
       const scale = Math.min(1, maxSize / Math.max(w, h));
       const cw = Math.round(w * scale);
       const ch = Math.round(h * scale);
       const canvas = document.createElement('canvas');
-      canvas.width = cw; canvas.height = ch;
+      canvas.width = cw;
+      canvas.height = ch;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, cw, ch);
       return new Promise(resolve => {
@@ -213,47 +217,70 @@ export default defineComponent({
 </script>
 
 <style scoped>
-.page-title {
-  margin: 0;
-  line-height: 1.2;
+/* ====== Контейнер альбомов ====== */
+.albums {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 16px;
 }
 
-/* карточка фиксированной высоты + аккуратная компоновка */
+/* ====== Исправленная сетка ====== */
+.albums-grid {
+  margin: -8px;
+  /* Компенсируем padding колонок */
+}
+
+.album-col {
+  padding: 8px !important;
+  display: flex;
+}
+
 .album-card {
-  height: 280px;
-  /* фиксируем одинаковую высоту для всех */
+  width: 100%;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  position: relative;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
+.album-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* ====== Обложка альбома ====== */
 .album-cover {
   display: block;
+  flex: none;
+  /* Запрещаем растягивание */
 }
 
 .cover {
   width: 100%;
-  aspect-ratio: 16/10;
+  aspect-ratio: 4/3; /* Оптимальное соотношение для фотоальбомов */
   background: #000;
   background-position: center;
-  background-size: cover;
-  /* обложке на общей сетке логичнее cover */
-  border-bottom: 1px solid rgba(255, 255, 255, .08);
-  display: grid;
-  place-items: center;
+  background-size: cover; /* Заполняет контейнер без повторений */
+  background-repeat: no-repeat; /* Убираем повторения */
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .cover-empty {
   font-size: 42px;
-  opacity: .6;
+  opacity: 0.6;
 }
 
-/* зона мета-инфо заполняет оставшееся место */
+/* ====== Мета-информация ====== */
 .album-meta {
   display: flex;
   flex-direction: column;
   gap: 6px;
   flex: 1 1 auto;
+  /* Занимает оставшееся пространство */
+  padding: 12px !important;
 }
 
 .album-meta .title {
@@ -261,37 +288,61 @@ export default defineComponent({
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.2;
 }
 
 .album-meta .desc {
-  opacity: .85;
+  opacity: 0.85;
   display: -webkit-box;
   -webkit-line-clamp: 2;
-  /* 2 строки описания */
   -webkit-box-orient: vertical;
   overflow: hidden;
+  line-height: 1.3;
   min-height: 2.6em;
-  /* стабилизируем высоту блока описания */
 }
 
 .album-meta .meta-row {
   display: flex;
   gap: 8px;
   margin-top: auto;
-  /* уводим кнопки вниз карточки */
+  /* Прижимаем кнопки к низу */
+  padding-top: 8px;
 }
 
-/* вторичный текст */
-.muted {
-  opacity: .75;
-  margin-top: 8px;
+/* ====== Кнопки ====== */
+.btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 0.875em;
+  transition: all 0.2s ease;
+  border: none;
+  cursor: pointer;
+  flex: 1;
+  text-align: center;
 }
 
-/* позиционирование и плавное появление кнопки редактирования */
-.album-card {
-  position: relative;
+.link-btn {
+  background: rgba(103, 58, 183, 0.1);
+  color: #673ab7;
+  border: 1px solid rgba(103, 58, 183, 0.3);
 }
 
+.link-btn:hover {
+  background: rgba(103, 58, 183, 0.2);
+}
+
+.ghost {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.ghost:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ====== Кнопка редактирования ====== */
 .card-edit {
   position: absolute;
   top: 8px;
@@ -299,12 +350,10 @@ export default defineComponent({
   z-index: 2;
   opacity: 0;
   transform: translateY(-4px);
-  transition: opacity .18s ease, transform .18s ease;
+  transition: opacity 0.18s ease, transform 0.18s ease;
   pointer-events: none;
-  /* чтобы не ловить ховеры, пока скрыта */
 }
 
-/* показываем на hover и на focus-within (доступно с клавиатуры) */
 .album-card:hover .card-edit,
 .album-card:focus-within .card-edit {
   opacity: 1;
@@ -312,8 +361,46 @@ export default defineComponent({
   pointer-events: auto;
 }
 
-/* (опционально) сделаем иконку читабельной на светлой обложке */
 .card-edit .v-icon {
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .35));
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
+
+/* ====== Текстовые состояния ====== */
+.muted {
+  opacity: 0.75;
+  text-align: center;
+  padding: 40px 20px;
+  margin: 0;
+}
+
+/* ====== Адаптивность ====== */
+@media (max-width: 599px) {
+  .albums {
+    padding: 8px;
+  }
+
+  .album-col {
+    padding: 4px !important;
+  }
+
+  .album-meta {
+    padding: 8px !important;
+  }
+
+  .meta-row {
+    flex-direction: column;
+  }
+}
+
+@media (min-width: 600px) and (max-width: 959px) {
+  /* На sm экранах - 2 колонки */
+}
+
+@media (min-width: 960px) and (max-width: 1263px) {
+  /* На md экранах - 3 колонки */
+}
+
+@media (min-width: 1264px) {
+  /* На lg экранах - 4 колонки */
 }
 </style>

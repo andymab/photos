@@ -1,29 +1,23 @@
-import { createApp } from 'vue';
-import App from './App.vue';
-import router from './router';
-import './styles.css';
-import { registerSW } from './plugins/pwa';
+import { createApp } from 'vue'
+import App from './App.vue'
+import router from './router'
+import './styles.css'
+import { registerSW } from './plugins/pwa'
 
-// ...твои импорты выше
-// ВАЖНО: подключаем devtools-только в dev и только в браузере
+const app = createApp(App)
 
-
-
-
-const app = createApp(App);
-
-// Если используешь Vuetify 3 через UMD:
+// Vuetify через UMD-глобал (из public/vuetify.min.js)
 const Vuetify = (window as any).Vuetify
-const vuetify = Vuetify?.createVuetify
-  ? Vuetify.createVuetify({
-      // ВАЖНО: говорим Vuetify, что иконки — webfont MDI
-      icons: { defaultSet: 'mdi' },
-      // theme: { defaultTheme: 'dark' }, // если тебе надо
-    })
-  : undefined
+const vuetify = Vuetify?.createVuetify ? Vuetify.createVuetify() : null
+if (vuetify) app.use(vuetify)
 
-  if (vuetify) app.use(vuetify)
+app.use(router)
+app.mount('#app')
 
-app.use(router).mount('#app');
+// аккуратно обрабатываем HMR
+if (import.meta.hot) {
+  import.meta.hot.accept()
+  import.meta.hot.dispose(() => app.unmount())
+}
 
-registerSW();
+registerSW()
