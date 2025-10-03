@@ -1,99 +1,98 @@
 <template>
+    <v-container class="album" fluid>
 
-    <section class="card album">
-        <v-icon icon="mdi-chevron-left" />
-        <div class="album__header">
-            <h2 class="album__title">Альбом</h2>
-            <div class="album__actions">
-                <router-link class="btn" :to="{ name: 'import', params: { id: albumId } }">
-                    + Добавить фото
-                </router-link>
-                <button class="btn" @click="exportAlbum">Экспорт</button>
-                <button class="btn" @click="load" title="Обновить">↻</button>
-            </div>
-        </div>
-
-        <p v-if="loading" class="muted">Загрузка…</p>
-        <p v-if="error" class="error">Ошибка: {{ error }}</p>
-        <p v-if="!loading && !error && !photos.length" class="muted">
-            В альбоме пока нет фото. Нажмите «Добавить фото».
-        </p>
-
-        <v-container v-if="photos.length" fluid class="pa-0">
-            <v-row dense>
-                <!-- 6 на lg (12/2), 4 на md (12/3), 2 на sm (12/6) -->
-                <v-col v-for="(p, index) in photos" :key="p.id" cols="12" sm="6" md="4" lg="2" class="pa-2">
-                    <v-card class="photo-card" elevation="2" rounded="xl" @click="openViewer(index)"
-                        style="cursor:pointer">
-                        <!-- фикс. высота кадра, внутри v-img на всю высоту, объект cover -->
-                        <div class="photo-frame">
-                            <v-img :src="p.src320" :srcset="`${p.src320} 320w, ${p.src1600} 1600w`"
-                                sizes="(max-width:640px) 320px, 100vw" :alt="p.title || 'Фото'" loading="lazy"
-                                decoding="async" class="photo-img" height="100%" cover />
-                        </div>
-
-                        <v-card-text v-if="p.title" class="photo-caption">
-                            {{ p.title }}
-                        </v-card-text>
-                    </v-card>
-                </v-col>
-            </v-row>
-        </v-container>
+        <v-row dense>
+            <v-col cols="12">
+                <p v-if="loading" class="muted">Загрузка…</p>
+                <p v-if="error" class="error">Ошибка: {{ error }}</p>
+                <p v-if="!loading && !error && !photos.length" class="muted">
+                    В альбоме пока нет фото. Нажмите «Добавить фото».
+                </p>
+            </v-col>
+        </v-row>
 
 
-        <!-- ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК -->
-        <v-dialog v-model="viewerOpen" fullscreen :scrim="true" transition="fade-transition" :retain-focus="false">
-            <div class="viewer" ref="viewer" @dblclick="toggleFit" @click.self="closeViewer">
-                <div class="viewer__topbar">
+
+        <v-row dense>
+            <!-- 6 на lg (12/2), 4 на md (12/3), 2 на sm (12/6) -->
+            <v-col v-for="(p, index) in photos" :key="p.id" cols="12" sm="6" md="4" lg="2" class="pa-2">
+                <v-card class="photo-card" elevation="2" rounded="xl" @click="openViewer(index)" style="cursor:pointer">
+                    <!-- фикс. высота кадра, внутри v-img на всю высоту, объект cover -->
+                    <div class="photo-frame">
+                        <v-img :src="p.src320" :srcset="`${p.src320} 320w, ${p.src1600} 1600w`"
+                            sizes="(max-width:640px) 320px, 100vw" :alt="p.title || 'Фото'" loading="lazy"
+                            decoding="async" class="photo-img" height="100%" cover />
+                    </div>
+
+                    <v-card-text v-if="p.title" class="photo-caption">
+                        {{ p.title }}
+                    </v-card-text>
+                </v-card>
+            </v-col>
+        </v-row>
+    </v-container>
+
+
+    <!-- ПОЛНОЭКРАННЫЙ ПРОСМОТРЩИК -->
+    <v-dialog v-model="viewerOpen" fullscreen :scrim="true" transition="fade-transition" :retain-focus="false">
+        <div class="viewer" ref="viewer" @click.self="closeViewer">
+            <div class="viewer__topbar">
+                <div class="viewer__header">
                     <div class="viewer__title">
                         {{ currentPhoto?.title || (photos.length ? 'Фото' : 'Нет фотографий') }}
                         <span v-if="photos.length" class="viewer__index">{{ currentIndex + 1 }} / {{ photos.length
                         }}</span>
                     </div>
-                    <div class="viewer__actions">
-                        <button class="btn" @click.stop="toggleFit" :disabled="!currentPhoto">
-                            {{ fitMode === 'cover' ? 'Contain' : 'Cover' }}
-                        </button>
-                        <button class="btn" @click.stop.prevent="enterFullscreen">⛶</button>
-                        <button class="btn" @click="openEdit">Редактировать</button>
-                        <button class="btn" @click.stop="closeViewer">✕</button>
+                    <div v-if="currentPhoto?.description" class="viewer__description">
+                        {{ currentPhoto.description }}
                     </div>
                 </div>
+                <div class="viewer__actions">
+                    <button class="btn" @click.stop.prevent="enterFullscreen">⛶</button>
 
-                <!-- Стрелки только если есть что листать -->
-                <v-btn v-if="photos.length > 1" class="viewer__nav viewer__nav--left" variant="flat" size="large" icon
-                    @click.stop="prev" aria-label="Назад">
-                    <v-icon icon="mdi-chevron-left" color="white"/>
-                </v-btn>
+                    <button class="btn" :disabled="!photos.length" @click.stop="toggleSlideshow">
+                        {{ slideshowRunning ? 'Стоп' : 'Слайды' }}
+                    </button>
 
-                <v-btn v-if="photos.length > 1" class="viewer__nav viewer__nav--right" variant="flat" size="large" icon
-                    @click.stop="next" aria-label="Вперёд">
-                    <v-icon icon="mdi-chevron-right" color="white"/>
-                </v-btn>
-
-                <div class="viewer__stage" :style="{
-                    backgroundImage: currentSrc ? `url('${currentSrc}')` : 'none',
-                    backgroundSize: fitMode,        // 'cover' | 'contain'
-                    backgroundPosition: 'center',
-                    backgroundRepeat: 'no-repeat'
-                }" @click.stop>
-                    <!-- Пустая заглушка, если фото нет -->
-                    <div v-if="!currentSrc" class="viewer__empty">
-                        <div class="viewer__empty-icon">📷</div>
-                        <div class="viewer__empty-text">Нет фотографий для просмотра</div>
-                        <router-link class="btn" :to="{ name: 'import', params: { id: albumId } }">Добавить
-                            фото</router-link>
-                    </div>
+                    <button class="btn" @click="openEdit">Редактировать</button>
+                    <button class="btn" @click.stop="closeViewer">✕</button>
                 </div>
             </div>
-        </v-dialog>
 
-        <!-- Диалог редактирования названия и описания -->
-        <EditPhotoDialog v-model="editOpen" :title="editTitle" :description="editDesc" :busy="savingEdit"
-            @save="onEditSave" />
+            <!-- stage -->
+            <div class="viewer__stage" @click.stop>
+                <transition name="fx-fade" mode="out-in">
+                    <div v-if="currentSrc" class="viewer__box" :key="currentSrc">
+                        <img class="viewer__img" :src="currentSrc" :alt="currentPhoto?.title || 'Фото'"
+                            draggable="false" />
+                    </div>
+                    <div v-else class="viewer__empty">
+                        <div class="viewer__empty-icon">📷</div>
+                        <div class="viewer__empty-text">Нет фотографий для просмотра</div>
+                        <router-link class="btn" :to="{ name: 'import', params: { id: albumId } }">
+                            Добавить фото
+                        </router-link>
+                    </div>
+                </transition>
+            </div>
+            <!-- Стрелки только если есть что листать -->
+            <v-btn v-if="photos.length > 1" class="viewer__nav viewer__nav--left" variant="flat" size="large" icon
+                @click.stop="prev" aria-label="Назад">
+                <v-icon icon="mdi-chevron-left" color="white" />
+            </v-btn>
+
+            <v-btn v-if="photos.length > 1" class="viewer__nav viewer__nav--right" variant="flat" size="large" icon
+                @click.stop="next" aria-label="Вперёд">
+                <v-icon icon="mdi-chevron-right" color="white" />
+            </v-btn>
 
 
-    </section>
+        </div>
+    </v-dialog>
+
+    <!-- Диалог редактирования названия и описания -->
+    <EditPhotoDialog v-model="editOpen" :title="editTitle" :description="editDesc" :busy="savingEdit"
+        @save="onEditSave" />
 
 </template>
 
@@ -107,6 +106,10 @@ import EditPhotoDialog from '@/components/EditPhotoDialog.vue'
 export default defineComponent({
     name: 'AlbumView',
     components: { EditPhotoDialog },
+    inject: {
+        setAlbumActions: { default: null },
+        clearAlbumActions: { default: null },
+    },
     data() {
         return {
             photos: [],
@@ -115,12 +118,17 @@ export default defineComponent({
 
             viewerOpen: false,
             currentIndex: 0,
-            fitMode: 'contain', // 'cover' | 'contain'
+
 
             editOpen: false,
             editTitle: '',
             editDesc: '',
             savingEdit: false,
+
+            slideshowRunning: false,
+            slideshowDelay: 5000, // 5 сек
+            slideshowTimer: null,
+
         };
     },
     computed: {
@@ -132,15 +140,42 @@ export default defineComponent({
         currentSrc() {
             // В полноэкранном всегда берём более крупную версию
             return this.currentPhoto ? (this.currentPhoto.src1600 || this.currentPhoto.src320) : '';
-        }
+        },
     },
     async mounted() {
         await this.load();
         window.addEventListener('keydown', this.onKey);
+
+        this.setAlbumActions && this.setAlbumActions({
+            export: () => this.exportAlbum(),
+            refresh: () => this.load(),
+        });
+
+        document.addEventListener('fullscreenchange', this.onFsChange);
+        document.addEventListener('webkitfullscreenchange', this.onFsChange);
+        document.addEventListener('mozfullscreenchange', this.onFsChange);
+        document.addEventListener('MSFullscreenChange', this.onFsChange);
+    },
+
+    beforeUnmount() {
+        // снимаем обработчики и экшены
+        this.clearAlbumActions && this.clearAlbumActions();
+
+        this.photos.forEach((p) => {
+            if (p.src320) URL.revokeObjectURL(p.src320);
+            if (p.src1600) URL.revokeObjectURL(p.src1600);
+        });
+        window.removeEventListener('keydown', this.onKey);
+    },
+    watch: {
+        viewerOpen(val) {
+            if (!val) this.stopSlideshow();
+        }
     },
     methods: {
 
         openEdit() {
+            this.stopSlideshow();
             const cp = this.currentPhoto
             if (!cp) return
             this.editTitle = cp.title || ''
@@ -148,6 +183,62 @@ export default defineComponent({
             this.editOpen = true
         },
 
+
+        // Кнопка "Слайды" переключает режим
+        async toggleSlideshow() {
+            if (this.slideshowRunning) {
+                this.stopSlideshow();
+            } else {
+                await this.startSlideshow();
+            }
+        },
+
+        async startSlideshow() {
+            if (!this.photos.length) return;
+
+            // Входим в полноэкранный режим (используем уже существующий метод)
+            try {
+                await this.enterFullscreen?.();
+            } catch (e) {
+                // если не получилось — все равно запускаем в режиме диалога
+            }
+
+            this.slideshowRunning = true;
+            this.queueNextTick();
+        },
+        stopSlideshow() {
+            this.slideshowRunning = false;
+            if (this.slideshowTimer) {
+                clearTimeout(this.slideshowTimer);
+                this.slideshowTimer = null;
+            }
+        },
+
+        // Планируем следующий переход
+        queueNextTick() {
+            // на всякий случай — очищаем прошлые таймеры
+            if (this.slideshowTimer) clearTimeout(this.slideshowTimer);
+
+            this.slideshowTimer = setTimeout(() => {
+                if (!this.slideshowRunning) return;
+                // листаем вперед (по кругу твой метод next() уже делает)
+                this.next?.();
+                // ставим следующий тик
+                this.queueNextTick();
+            }, this.slideshowDelay);
+        },
+
+        onFsChange() {
+            const fsElement =
+                document.fullscreenElement ||
+                document.webkitFullscreenElement ||
+                document.mozFullScreenElement ||
+                document.msFullscreenElement;
+
+            if (!fsElement && this.slideshowRunning) {
+                this.stopSlideshow();
+            }
+        },
         async onEditSave({ title, description }) {
             const cp = this.currentPhoto
             if (!cp) return
@@ -256,10 +347,6 @@ export default defineComponent({
             if (e.key === 'ArrowRight') this.next();
             if (e.key === 'ArrowLeft') this.prev();
             if (e.key.toLowerCase() === 'f') this.enterFullscreen();
-            if (e.key.toLowerCase() === 'c') this.toggleFit();
-        },
-        toggleFit() {
-            this.fitMode = this.fitMode === 'cover' ? 'contain' : 'cover';
         },
         isFullscreen() {
             return document.fullscreenElement
@@ -306,6 +393,13 @@ export default defineComponent({
             if (p.src1600) URL.revokeObjectURL(p.src1600);
         });
         window.removeEventListener('keydown', this.onKey);
+    },
+    beforeDestroy() {
+        this.stopSlideshow();
+        document.removeEventListener('fullscreenchange', this.onFsChange);
+        document.removeEventListener('webkitfullscreenchange', this.onFsChange);
+        document.removeEventListener('mozfullscreenchange', this.onFsChange);
+        document.removeEventListener('MSFullscreenChange', this.onFsChange);
     }
 });
 </script>
@@ -426,7 +520,8 @@ export default defineComponent({
 
 /* ====== Полноэкранный просмотр ====== */
 .viewer {
-    position: relative;
+    display: flex;
+    flex-direction: column;
     width: 100vw;
     height: 100vh;
     background:
@@ -438,20 +533,28 @@ export default defineComponent({
 }
 
 .viewer__topbar {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 10px 12px;
     background: linear-gradient(to bottom, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0));
     z-index: 3;
+    position: absolute;
+    width: 100%;
+}
+
+.viewer__header {
+    margin-bottom: 16px;
 }
 
 .viewer__title {
     font-weight: 600;
+}
+
+.viewer__description {
+    opacity: .8;
+    font-size: .95em;
+    line-height: 1.4;
 }
 
 .viewer__index {
@@ -467,18 +570,34 @@ export default defineComponent({
 }
 
 .viewer__stage {
-    position: absolute;
-    inset: 0;
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
     display: grid;
     place-items: center;
-    padding: 48px 72px;
-    /* отступы от топбара и стрелок */
+    overflow: hidden;
+    background: #000;
+}
+
+.viewer__box {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    width: 100vw;
+    height: 100vh;
 }
 
 .viewer__img {
+    width: auto;
+    height: auto;
     max-width: 100%;
     max-height: 100%;
+    object-fit: contain;
+    object-position: center;
     display: block;
+    user-select: none;
+    -webkit-user-drag: none;
     border-radius: 12px;
     box-shadow: 0 8px 40px rgba(0, 0, 0, .35);
     background: #000;
@@ -490,11 +609,6 @@ export default defineComponent({
     height: 100%;
 }
 
-.fit-contain {
-    object-fit: contain;
-    width: 100%;
-    height: 100%;
-}
 
 
 .viewer__nav {
@@ -542,5 +656,19 @@ export default defineComponent({
 .viewer__empty-text {
     font-size: 18px;
     margin-bottom: 6px;
+}
+
+/* Fade */
+.fx-fade-enter-active,
+.fx-fade-leave-active {
+    transition: opacity 500ms ease;
+}
+
+.fx-fade-enter {
+    opacity: 0;
+}
+
+.fx-fade-leave-to {
+    opacity: 0;
 }
 </style>

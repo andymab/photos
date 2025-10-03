@@ -2,9 +2,9 @@
     <teleport to="body">
         <div v-if="modelValue" class="av-edit-backdrop" @click.self="close">
             <div class="av-edit-modal" role="dialog" aria-modal="true" @keydown="onKeydown">
-                <header class="av-edit-head">
+                <header class="av-edit-head d-flex justify-space-between align-center">
                     <strong>Редактирование</strong>
-                    <button class="btn btn--text" @click="close">✕</button>
+                     <v-btn variant="text" @click="close"  icon="mdi-close"></v-btn>
                 </header>
 
                 <div class="av-edit-controls">

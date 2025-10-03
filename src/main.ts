@@ -4,6 +4,11 @@ import router from './router';
 import './styles.css';
 import { registerSW } from './plugins/pwa';
 
+// ...твои импорты выше
+// ВАЖНО: подключаем devtools-только в dev и только в браузере
+
+
+
 
 const app = createApp(App);
 

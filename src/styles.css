@@ -16,7 +16,7 @@ body {
     margin: 0;
     font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Arial;
     background: radial-gradient(1200px 800px at 10% 0%, rgba(255, 255, 255, 0.06), transparent 60%),
-        linear-gradient(135deg, #6a4bd8, #258ad1 50%, #11c3bd);
+        linear-gradient(135deg, #6a4bd8, #258ad1 50%, #11c3bd) !important;
     color: #eef3ff;
 }
 

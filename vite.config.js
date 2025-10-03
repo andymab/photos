@@ -3,7 +3,7 @@ import vue from "@vitejs/plugin-vue";
 import { viteExternalsPlugin } from "vite-plugin-externals";
 import { fileURLToPath, URL } from "node:url";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: "./",
   plugins: [
     vue(),
@@ -15,8 +15,8 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)), 
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
-  server: { hmr: false },
-});
+  server: { hmr: true },
+}));
